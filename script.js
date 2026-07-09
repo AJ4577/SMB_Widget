@@ -131,8 +131,8 @@ function persistLeadSearchCriteria(leadId, leadRecord) {
       Phone:            String(leadRecord?.Phone            || ""),
       Mobile:           String(leadRecord?.Mobile           || ""),
       Year_of_Birth:    String(leadRecord?.Year_of_Birth    || ""),
-      Date_of_Birth:    String(leadRecord?.Date_of_Birth    || ""),
-      DOB:              String(leadRecord?.DOB              || ""),
+      // Date_of_Birth:    String(leadRecord?.Date_of_Birth    || ""),
+      // DOB:              String(leadRecord?.DOB              || ""),
       Home_Address_Zip: String(leadRecord?.Home_Address_Zip || ""),
       Zip_Code:         String(leadRecord?.Zip_Code         || ""),
     };
@@ -602,7 +602,7 @@ function buildMelissaSearchParams(lead) {
     email:     String(lead?.Email || "").trim(),
     phone:     String(lead?.Phone || lead?.Mobile || "").trim(),
     birthYear: String(lead?.Year_of_Birth || "").trim() ||
-               extractYear(lead?.Date_of_Birth || lead?.DOB),
+               extractYear(lead?.Year_of_Birth || lead?.DOB),
   };
 }
 
@@ -665,7 +665,7 @@ function matchesLeadCriteria(record, lead) {
   // full date field only if Year_of_Birth is empty, so the regex extractor
   // still works for legacy Date_of_Birth values.
   const leadBirthYear = String(lead?.Year_of_Birth || "").trim() ||
-                        extractYear(lead?.Date_of_Birth || lead?.DOB);
+                        extractYear(lead?.Year_of_Birth || lead?.DOB);
   const leadZip       = normalizeZip(lead?.Home_Address_Zip || lead?.Zip_Code);
 
   const recFirstName = normalizeName(
