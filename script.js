@@ -1,17 +1,5 @@
 /* =============================================================
  * Melissa Personator Search — Lead Update Widget (Final Fixed)
- * -------------------------------------------------------------
- * Flow:
- * 1. Zoho SDK PageLoad -> get current Lead ID
- * 2. Fetch current Lead from Zoho CRM (Fresh data only)
- * 3. Build Melissa Request (EXACT CODE 2 LOGIC: Full_Name + State)
- * 4. Call Melissa API (SearchConditions:progressive,SearchType:Auto)
- * 5. Bypass strict JS filters -> Render exactly what API returns
- * 6. Update Zoho CRM on selection
- * ============================================================= */
-
-/* ===============================
- * CONFIGURATION — EDIT BEFORE GO-LIVE
  * =============================== */
 
 const PERSONATOR_ENDPOINT =
