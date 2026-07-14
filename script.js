@@ -278,12 +278,44 @@ function normalizePhone(value) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+/* ---------------------------------------------------------------
+ * PHONE / EMAIL EXTRACTION HELPERS (Phone/Email display fix)
+ * Melissa Personator Search returns phones/emails as plain string
+ * arrays named "Phones"/"Emails". Older/proxy shapes may use
+ * "PhoneRecords"/"EmailRecords" with sub-objects. These helpers
+ * tolerate BOTH shapes so phone/email are extracted correctly
+ * without altering any other mapping/address behavior.
+ * --------------------------------------------------------------- */
+function extractPhoneList(record) {
+  const source = (Array.isArray(record?.Phones) && record.Phones.length)
+    ? record.Phones
+    : (record?.PhoneRecords || []);
+  return source
+    .map((entry) => (typeof entry === "string"
+      ? entry
+      : (entry?.PhoneNumber || entry?.Phone || entry?.Number || "")))
+    .map(toDisplayString)
+    .filter(Boolean);
+}
+
+function extractEmailList(record) {
+  const source = (Array.isArray(record?.Emails) && record.Emails.length)
+    ? record.Emails
+    : (record?.EmailRecords || []);
+  return source
+    .map((entry) => (typeof entry === "string"
+      ? entry
+      : (entry?.Email || entry?.EmailAddress || entry?.Address || "")))
+    .map(toDisplayString)
+    .filter(Boolean);
+}
+
 function getMelissaUniqueKey(record) {
   const mik = record?.MelissaIdentityKey || record?.melissaIdentityKey || "";
   if (mik) return `mik:${String(mik).trim()}`;
 
-  const phones = (record?.PhoneRecords || []).map((p) => normalizePhone((typeof p === "string" ? p : p?.phoneNumber || p?.Phone) || "")).filter(Boolean).sort().join("|");
-  const emails = (record?.EmailRecords || []).map((e) => normalizeEmail((typeof e === "string" ? e : e?.email || e?.Email) || "")).filter(Boolean).sort().join("|");
+  const phones = extractPhoneList(record).map((p) => normalizePhone(p)).filter(Boolean).sort().join("|");
+  const emails = extractEmailList(record).map((e) => normalizeEmail(e)).filter(Boolean).sort().join("|");
   const fullName = record?.FullName || [ record?.Name?.FirstName || record?.First || "", record?.Name?.MiddleName || record?.Middle || "", record?.Name?.LastName || record?.Last || "" ].map((s) => String(s || "").trim()).filter(Boolean).join(" ");
   return [ "combined", normalizeText(fullName), String(record?.DateOfBirth || "").trim(), normalizeText(record?.CurrentAddress?.AddressLine1 || ""), normalizeZip(record?.CurrentAddress?.PostalCode || ""), phones, emails ].join("||");
 }
@@ -328,7 +360,10 @@ async function callMelissaSearchAPI(params) {
     }
 
     // EXACT URL STRUCTURE AS CODE 2
-    let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) + "&format=JSON&opt=SearchConditions:progressive,SearchType:Auto&cols=GrpAll,PreviousAddress,DateOfBirth";
+    // Phone/Email fix: request valid Personator Search column groups so
+    // Phones and Emails are actually returned. "GrpAll" was invalid and
+    // caused Melissa to omit phone/email columns entirely.
+    let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) + "&format=JSON&opt=SearchConditions:progressive,SearchType:Auto&cols=GrpName,GrpAddress,GrpPhone,GrpEmail,PreviousAddress,DateOfBirth";
     if (params.full) url += "&full=" + encodeURIComponent(params.full);
     if (params.state) url += "&state=" + encodeURIComponent(params.state);
 
@@ -374,8 +409,11 @@ function mapMelissaRecords(records) {
     const blankRow = { melissaRecordLabel: groupLabel, firstName, middleName, lastName, birthYear, dataType: "", homeAddressStreet: "", homeAddressState: "", homeAddressCity: "", homeAddressZip: "", phone: "", email: "" };
     const buildAddressRow = (addr, label, phoneStr, emailStr) => ({ ...blankRow, dataType: label, homeAddressStreet: toDisplayString(addr?.AddressLine1 || addr?.Street || ""), homeAddressState: toDisplayString(addr?.State || addr?.StateProvince || ""), homeAddressCity: toDisplayString(addr?.City || addr?.Locality || ""), homeAddressZip: toDisplayString(addr?.PostalCode || addr?.ZipCode || ""), phone: phoneStr || "", email: emailStr || "" });
 
-    const allPhones = (record.PhoneRecords || []).map((entry) => typeof entry === "string" ? entry : entry?.PhoneNumber || entry?.Phone || "").map(toDisplayString).filter(Boolean);
-    const allEmails = (record.EmailRecords || []).map((entry) => typeof entry === "string" ? entry : entry?.Email || entry?.EmailAddress || "").map(toDisplayString).filter(Boolean);
+    // Phone/Email fix: use tolerant extractors that support both the real
+    // Melissa "Phones"/"Emails" string arrays and the legacy
+    // "PhoneRecords"/"EmailRecords" object arrays.
+    const allPhones = extractPhoneList(record);
+    const allEmails = extractEmailList(record);
     
     const workingEmails = [...allEmails];
     let currentEmail = "";
