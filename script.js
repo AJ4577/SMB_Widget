@@ -1,5 +1,20 @@
 /* =============================================================
- * Melissa Personator Search — Lead Update Widget (Final Fixed)
+ * Melissa Personator Search — Lead Update Widget (DEBUG BUILD)
+ * -------------------------------------------------------------
+ * TEMPORARY: contains phone/email diagnostic logging.
+ * Remove the ">>> DEBUG" blocks once the real field path is known.
+ * -------------------------------------------------------------
+ * Flow:
+ * 1. Zoho SDK PageLoad -> get current Lead ID
+ * 2. Fetch current Lead from Zoho CRM (Fresh data only)
+ * 3. Build Melissa Request (EXACT CODE 2 LOGIC: Full_Name + State)
+ * 4. Call Melissa API (SearchConditions:progressive,SearchType:Auto)
+ * 5. Bypass strict JS filters -> Render exactly what API returns
+ * 6. Update Zoho CRM on selection
+ * ============================================================= */
+
+/* ===============================
+ * CONFIGURATION — EDIT BEFORE GO-LIVE
  * =============================== */
 
 const PERSONATOR_ENDPOINT =
@@ -132,6 +147,42 @@ function refreshUpdateButton() {
 }
 
 /* ===============================
+ * >>> DEBUG: DEEP KEY SCANNER (TEMPORARY)
+ * Recursively walks the record and prints every path whose key OR value
+ * looks phone/email related. This tells us the EXACT field path without guessing.
+ * =============================== */
+function debugScanForContact(obj, pathPrefix = "record") {
+  const hits = [];
+  const phoneKeyRe = /phone|tel|mobile|cell/i;
+  const emailKeyRe = /email|mail/i;
+  const phoneValRe = /^\+?[\d().\-\s]{7,}$/;
+  const emailValRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function walk(node, path) {
+    if (node === null || node === undefined) return;
+    if (typeof node === "string") {
+      if (phoneValRe.test(node) || emailValRe.test(node)) hits.push(`${path} = ${JSON.stringify(node)}`);
+      return;
+    }
+    if (typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => walk(item, `${path}[${i}]`));
+      return;
+    }
+    Object.keys(node).forEach((k) => {
+      const childPath = `${path}.${k}`;
+      if (phoneKeyRe.test(k) || emailKeyRe.test(k)) {
+        hits.push(`KEY-MATCH ${childPath} = ${JSON.stringify(node[k])}`);
+      }
+      walk(node[k], childPath);
+    });
+  }
+
+  walk(obj, pathPrefix);
+  return hits;
+}
+
+/* ===============================
  * ZOHO SDK INIT
  * =============================== */
 
@@ -177,7 +228,13 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     }
 
     const rawResponse = await callMelissaSearchAPI(baseParams);
-    
+
+    /* >>> DEBUG: full response + top-level shape */
+    console.log("========== FULL MELISSA RESPONSE ==========");
+    console.log(JSON.stringify(rawResponse, null, 2));
+    console.log("RESPONSE TOP-LEVEL KEYS:", rawResponse && typeof rawResponse === "object" ? Object.keys(rawResponse) : typeof rawResponse);
+    /* <<< DEBUG */
+
     if (hasLicenseError(rawResponse)) {
       setLoading(false);
       setEmptyMessage("Melissa license key issue.");
@@ -186,7 +243,18 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     }
 
     const allRecords = Array.isArray(rawResponse?.Records) ? rawResponse.Records : [];
-    
+
+    /* >>> DEBUG: per-record structure + contact scan */
+    console.log("========== RECORD COUNT ==========", allRecords.length);
+    allRecords.forEach((record, i) => {
+      console.log(`---------- RECORD #${i} ----------`);
+      console.log("RECORD KEYS:", Object.keys(record || {}));
+      console.log("FULL RECORD:", JSON.stringify(record, null, 2));
+      const hits = debugScanForContact(record, `record[${i}]`);
+      console.log(`CONTACT-LIKE PATHS in record #${i}:`, hits.length ? hits : "(none found — phone/email likely NOT in response)");
+    });
+    /* <<< DEBUG */
+
     // Bypass strict JS filter to ensure AZ and ghost records are kept just like Code 2
     const matchedRaw = dedupRawMelissaRecords(allRecords); 
     
