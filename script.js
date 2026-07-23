@@ -8,8 +8,7 @@ const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
 
 const FIELD_API_NAMES = {
   street: "LOCATION_ADDRESS",
-  State: "State",
-  // state: "LOCATION_ADDRESS_STATE",
+  state: "LOCATION_ADDRESS_STATE",
   city: "LOCATION_ADDRESS_CITY",
   zip: "Home_Address_Zip",
   phone: "Phone",
@@ -71,12 +70,12 @@ const els = {
   successModal: $("successModal"), successClose: $("successCloseBtn"),
 };
 
-const toggle = (el, cls, show) => el.classList.toggle(cls, show);
-function showBanner(message, type = "info") { els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
-function hideBanner() { els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
+const toggle = (el, cls, show) => { if (el) el.classList.toggle(cls, show); };
+function showBanner(message, type = "info") { if (!els.banner) return; els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
+function hideBanner() { if (!els.banner) return; els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
 function setLoading(isLoading) { toggle(els.loading, "hidden", !isLoading); }
 function showEmpty(show) { toggle(els.empty, "hidden", !show); }
-function setEmptyMessage(message) { const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
+function setEmptyMessage(message) { if (!els.empty) return; const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
 function showResults(show) { toggle(els.resultsWrap, "hidden", !show); }
 function showPreview(show) { toggle(els.previewSec, "hidden", !show); }
 
@@ -130,7 +129,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
   if (!currentLeadId) { setLoading(false); showBanner("Current Lead ID not found.", "error"); return; }
 
-  els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
+  if (els.leadContext) els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
 
   try {
     currentLeadRecord = await fetchCurrentLead(currentLeadId);
@@ -193,7 +192,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
     renderResults(filteredRecords);
     showResults(true);
-    els.filterInput.disabled = false;
+    if (els.filterInput) els.filterInput.disabled = false;
     melissaTableRendered = true;
   } catch (error) {
     console.error("Widget load error:", error);
@@ -385,6 +384,7 @@ function mapMelissaRecords(records) {
 
 /* Table rendering */
 function renderResults(records) {
+  if (!els.resultsBody) return;
   els.resultsBody.innerHTML = "";
   if (!records.length) { showEmpty(true); showResults(false); return; }
   showEmpty(false); showResults(true);
@@ -427,6 +427,7 @@ function selectRecord(index) {
 }
 
 function markSelectedRow(index) {
+  if (!els.resultsBody) return;
   els.resultsBody.querySelectorAll("tr").forEach((row) => {
     const isSelected = parseInt(row.dataset.index, 10) === index;
     row.classList.toggle("selected", isSelected);
@@ -436,6 +437,7 @@ function markSelectedRow(index) {
 }
 
 function renderPreview(record) {
+  if (!els.previewGrid) return;
   const fields = [
     ["Melissa Record", record.melissaRecordLabel], ["First Name", record.firstName], ["Last Name", record.lastName],
     ["Year of Birth", record.birthYear], ["Data Type", record.dataType], ["Home Address Street", record.homeAddressStreet],
@@ -448,16 +450,18 @@ function renderPreview(record) {
 }
 
 /* Filtering */
-els.filterInput.addEventListener("input", (event) => {
-  const query = String(event.target.value || "").trim().toLowerCase();
-  filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
-    [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
-     record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
-     record.phone, record.email].join(" ").toLowerCase().includes(query)
-  );
-  clearSelection();
-  renderResults(filteredRecords);
-});
+if (els.filterInput) {
+  els.filterInput.addEventListener("input", (event) => {
+    const query = String(event.target.value || "").trim().toLowerCase();
+    filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
+      [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
+       record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
+       record.phone, record.email].join(" ").toLowerCase().includes(query)
+    );
+    clearSelection();
+    renderResults(filteredRecords);
+  });
+}
 
 /* Zoho CRM update */
 function attachUpdateLeadHandler() {
@@ -541,7 +545,7 @@ function closeWidget() {
   } catch (error) { console.warn("Popup close failed:", error); }
 }
 
-els.successClose.addEventListener("click", closeWidget);
-els.cancelBtn.addEventListener("click", closeWidget);
+if (els.successClose) els.successClose.addEventListener("click", closeWidget);
+if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", clearSelection);
 if (els.previewUpdateBtn) els.previewUpdateBtn.addEventListener("click", async () => { await updateLeadRecord(); });
