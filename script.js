@@ -2,7 +2,7 @@
 
 const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/web/doPersonatorSearch";
 const PERSONATOR_PROXY_URL = "";
-const ENABLE_MELISSA_CONTACT_DEBUG = false;
+const ENABLE_MELISSA_CONTACT_DEBUG = true;
 const PERSONATOR_LICENSE_KEY = "NNyQiGBQttkIhzONLxAqXx**";
 const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
 
