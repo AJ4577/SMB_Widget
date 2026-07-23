@@ -50,7 +50,10 @@ function persistLeadSearchCriteria(leadId, leadRecord) {
       Email: s("Email"), Phone: s("Phone"), Mobile: s("Mobile"),
       Year_of_Birth: s("Year_of_Birth"), Date_of_Birth: s("Date_of_Birth"), DOB: s("DOB"),
       Home_Address_Zip: s("Home_Address_Zip"), Zip_Code: s("Zip_Code"),
-      State: String(leadRecord?.State || leadRecord?.LOCATION_ADDRESS_STATE || leadRecord?.Home_Address_State || ""),
+      // Read ONLY the State field (Deluge parity). Do not fall back to
+      // Home_Address_State / LOCATION_ADDRESS_STATE, otherwise a blank State
+      // would silently pick up the home-address state and filter the search.
+      State: s("State"),
     };
     localStorage.setItem(getLeadSnapshotStorageKey(leadId), JSON.stringify(snapshot));
     return snapshot;
