@@ -50,10 +50,11 @@ function persistLeadSearchCriteria(leadId, leadRecord) {
       Email: s("Email"), Phone: s("Phone"), Mobile: s("Mobile"),
       Year_of_Birth: s("Year_of_Birth"), Date_of_Birth: s("Date_of_Birth"), DOB: s("DOB"),
       Home_Address_Zip: s("Home_Address_Zip"), Zip_Code: s("Zip_Code"),
-      // Read ONLY the State field (Deluge parity). Do not fall back to
-      // Home_Address_State / LOCATION_ADDRESS_STATE, otherwise a blank State
-      // would silently pick up the home-address state and filter the search.
-      State: s("State"),
+      // IMPORTANT:
+      // Melissa search must use only the standard Lead State field.
+      // Home Address State must never be used as a fallback, so the snapshot
+      // stores ONLY the standard State field here.
+      State: String(leadRecord?.State || ""),
     };
     localStorage.setItem(getLeadSnapshotStorageKey(leadId), JSON.stringify(snapshot));
     return snapshot;
@@ -147,15 +148,32 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     currentLeadRecord = await fetchCurrentLead(currentLeadId);
     console.log("Current Lead Data (live CRM):", currentLeadRecord);
 
-    const savedCriteria = loadSavedLeadSearchCriteria(currentLeadId);
-    searchLeadRecord = savedCriteria || persistLeadSearchCriteria(currentLeadId, currentLeadRecord) || currentLeadRecord;
+    // Remove any old cached search values. Previous versions may have saved
+    // Home Address State inside the State property; clear it so it can never
+    // be reused as Melissa search input.
+    try {
+      localStorage.removeItem(getLeadSnapshotStorageKey(currentLeadId));
+    } catch (error) {
+      console.warn("Unable to clear saved Melissa search criteria:", error);
+    }
+
+    // Always build Melissa search criteria directly from the live CRM record.
+    // Never load search State from localStorage.
+    searchLeadRecord = currentLeadRecord;
 
     const baseParams = buildMelissaSearchParams(searchLeadRecord);
     console.log("Lead identity for search (Code 2 Logic):", baseParams);
 
     if (!baseParams.full) {
       setLoading(false);
-      setEmptyMessage("Cannot search Melissa: Full Name is required.");
+      setEmptyMessage("Cannot search Melissa: Lead Full Name is required.");
+      showEmpty(true);
+      return;
+    }
+
+    if (!baseParams.state) {
+      setLoading(false);
+      setEmptyMessage("Cannot search Melissa: Lead State is required.");
       showEmpty(true);
       return;
     }
@@ -242,17 +260,12 @@ async function fetchCurrentLead(leadId) {
 
 /* Melissa search input */
 function buildMelissaSearchParams(lead) {
-  let fullName = lead?.Full_Name
+  const fullName = lead?.Full_Name
     ? String(lead.Full_Name).trim()
     : (String(lead?.First_Name || "").trim() + " " + String(lead?.Last_Name || "").trim()).trim();
-  // Deluge parity: strip everything except letters, digits, space and hyphen
-  // (Deluge: name.replaceAll("[^A-Za-z0-9 -]","")). Ensures the exact same
-  // `full` string is sent to Melissa as the Deluge function.
-  fullName = fullName.replace(/[^A-Za-z0-9 -]/g, "");
-  // Deluge parity: the Deluge function reads ONLY the `State` field
-  // (state = ifnull(getData.get("State"),"")). It does NOT fall back to
-  // Home_Address_State. So when State is blank, no state filter is applied
-  // and Melissa searches nationwide — matching the Deluge behaviour exactly.
+  // IMPORTANT:
+  // Melissa search must use only the standard Lead State field.
+  // Home Address State must never be used as a fallback.
   const state = String(lead?.State || "").trim();
   return { full: fullName, state };
 }
