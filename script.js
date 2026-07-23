@@ -1,6 +1,6 @@
 /* Melissa Personator Search — Lead Update Widget */
 
-const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/WEB/doPersonatorSearch";
+const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/web/doPersonatorSearch";
 const PERSONATOR_PROXY_URL = "";
 const ENABLE_MELISSA_CONTACT_DEBUG = false;
 const PERSONATOR_LICENSE_KEY = "NNyQiGBQttkIhzONLxAqXx**";
@@ -70,12 +70,21 @@ const els = {
   successModal: $("successModal"), successClose: $("successCloseBtn"),
 };
 
-const toggle = (el, cls, show) => el.classList.toggle(cls, show);
-function showBanner(message, type = "info") { els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
-function hideBanner() { els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
+// One-time startup diagnostic: logs which expected DOM elements are missing.
+// Helps catch HTML/JS id mismatches without breaking the widget.
+(function logMissingElements() {
+  try {
+    const missing = Object.keys(els).filter((k) => !els[k]);
+    if (missing.length) console.warn("[Melissa Widget] Missing DOM elements (check HTML ids):", missing);
+  } catch (e) { /* no-op */ }
+})();
+
+const toggle = (el, cls, show) => { if (el) el.classList.toggle(cls, show); };
+function showBanner(message, type = "info") { if (!els.banner) return; els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
+function hideBanner() { if (!els.banner) return; els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
 function setLoading(isLoading) { toggle(els.loading, "hidden", !isLoading); }
 function showEmpty(show) { toggle(els.empty, "hidden", !show); }
-function setEmptyMessage(message) { const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
+function setEmptyMessage(message) { if (!els.empty) return; const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
 function showResults(show) { toggle(els.resultsWrap, "hidden", !show); }
 function showPreview(show) { toggle(els.previewSec, "hidden", !show); }
 
@@ -129,7 +138,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
   if (!currentLeadId) { setLoading(false); showBanner("Current Lead ID not found.", "error"); return; }
 
-  els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
+  if (els.leadContext) els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
 
   try {
     currentLeadRecord = await fetchCurrentLead(currentLeadId);
@@ -192,7 +201,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
     renderResults(filteredRecords);
     showResults(true);
-    els.filterInput.disabled = false;
+    if (els.filterInput) els.filterInput.disabled = false;
     melissaTableRendered = true;
   } catch (error) {
     console.error("Widget load error:", error);
@@ -218,9 +227,13 @@ async function fetchCurrentLead(leadId) {
 
 /* Melissa search input */
 function buildMelissaSearchParams(lead) {
-  const fullName = lead?.Full_Name
+  let fullName = lead?.Full_Name
     ? String(lead.Full_Name).trim()
     : (String(lead?.First_Name || "").trim() + " " + String(lead?.Last_Name || "").trim()).trim();
+  // Deluge parity: strip everything except letters, digits, space and hyphen
+  // (Deluge: name.replaceAll("[^A-Za-z0-9 -]","")). Ensures the exact same
+  // `full` string is sent to Melissa as the Deluge function.
+  fullName = fullName.replace(/[^A-Za-z0-9 -]/g, "");
   const state = String(lead?.State || lead?.LOCATION_ADDRESS_STATE || lead?.Home_Address_State || "").trim();
   return { full: fullName, state };
 }
@@ -384,6 +397,7 @@ function mapMelissaRecords(records) {
 
 /* Table rendering */
 function renderResults(records) {
+  if (!els.resultsBody) return;
   els.resultsBody.innerHTML = "";
   if (!records.length) { showEmpty(true); showResults(false); return; }
   showEmpty(false); showResults(true);
@@ -426,6 +440,7 @@ function selectRecord(index) {
 }
 
 function markSelectedRow(index) {
+  if (!els.resultsBody) return;
   els.resultsBody.querySelectorAll("tr").forEach((row) => {
     const isSelected = parseInt(row.dataset.index, 10) === index;
     row.classList.toggle("selected", isSelected);
@@ -435,6 +450,7 @@ function markSelectedRow(index) {
 }
 
 function renderPreview(record) {
+  if (!els.previewGrid) return;
   const fields = [
     ["Melissa Record", record.melissaRecordLabel], ["First Name", record.firstName], ["Last Name", record.lastName],
     ["Year of Birth", record.birthYear], ["Data Type", record.dataType], ["Home Address Street", record.homeAddressStreet],
@@ -447,16 +463,18 @@ function renderPreview(record) {
 }
 
 /* Filtering */
-els.filterInput.addEventListener("input", (event) => {
-  const query = String(event.target.value || "").trim().toLowerCase();
-  filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
-    [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
-     record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
-     record.phone, record.email].join(" ").toLowerCase().includes(query)
-  );
-  clearSelection();
-  renderResults(filteredRecords);
-});
+if (els.filterInput) {
+  els.filterInput.addEventListener("input", (event) => {
+    const query = String(event.target.value || "").trim().toLowerCase();
+    filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
+      [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
+       record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
+       record.phone, record.email].join(" ").toLowerCase().includes(query)
+    );
+    clearSelection();
+    renderResults(filteredRecords);
+  });
+}
 
 /* Zoho CRM update */
 function attachUpdateLeadHandler() {
@@ -540,6 +558,9 @@ function closeWidget() {
   } catch (error) { console.warn("Popup close failed:", error); }
 }
 
+/* Null-safe event binding — a single missing element must not break the others.
+   Each binding is guarded so preview Update/Cancel always attach even if the
+   success modal or top-level cancel button is absent from the HTML. */
 if (els.successClose) els.successClose.addEventListener("click", closeWidget);
 if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", clearSelection);
