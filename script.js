@@ -2,7 +2,7 @@
 
 const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/web/doPersonatorSearch";
 const PERSONATOR_PROXY_URL = "";
-const ENABLE_MELISSA_CONTACT_DEBUG = true;
+const ENABLE_MELISSA_CONTACT_DEBUG = false;
 const PERSONATOR_LICENSE_KEY = "NNyQiGBQttkIhzONLxAqXx**";
 const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
 
@@ -183,14 +183,26 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     }
 
     const matchedRaw = dedupRawMelissaRecords(allRecords);
-    console.log("Final rendered records count:", matchedRaw.length);
+    console.log("Melissa persons received:", allRecords.length, "| after raw-dedup:", matchedRaw.length);
     setLoading(false);
 
     if (!matchedRaw.length) {
       setEmptyMessage("No Melissa records found for this Name and State."); showEmpty(true); return;
     }
 
-    const uniqueRows = dedupMelissaRows(mapMelissaRecords(matchedRaw));
+    const mappedRows = mapMelissaRecords(matchedRaw);
+    // Diagnostic: how many rows did each person produce? A person with 0 rows
+    // is invisible in the table even though Melissa returned them.
+    const personRowCounts = {};
+    mappedRows.forEach((r) => { personRowCounts[r.melissaRecordLabel] = (personRowCounts[r.melissaRecordLabel] || 0) + 1; });
+    console.log("Rows produced per person:", personRowCounts);
+    const personsWithRows = Object.keys(personRowCounts).length;
+    if (personsWithRows < matchedRaw.length) {
+      console.warn(`[Melissa Widget] ${matchedRaw.length - personsWithRows} person(s) produced NO rows and are hidden. ` +
+        `Likely their address fields use an unexpected shape/key. Check FULL RECORD logs above.`);
+    }
+
+    const uniqueRows = dedupMelissaRows(mappedRows);
 
     if (!uniqueRows.length) {
       setEmptyMessage("No valid address records found to display."); showEmpty(true); return;
@@ -279,12 +291,13 @@ function getMelissaUniqueKey(record) {
 
 function dedupRawMelissaRecords(records) {
   if (!Array.isArray(records) || !records.length) return [];
-  const uniqueRecords = new Map();
-  records.forEach((record) => {
-    const key = getMelissaUniqueKey(record);
-    if (!uniqueRecords.has(key)) uniqueRecords.set(key, record);
-  });
-  return Array.from(uniqueRecords.values());
+  // Deluge parity: Melissa already returns one entry per distinct person,
+  // and the Deluge function shows every record without de-duplication.
+  // Collapsing "raw" records here risked dropping a valid person when two
+  // people shared an empty/duplicate identity key. So we pass through every
+  // record unchanged; row-level de-dup (which is keyed by Person #) still
+  // removes exact duplicate rows within a single person safely.
+  return records.slice();
 }
 
 function dedupMelissaRows(rows) {
@@ -390,6 +403,14 @@ function mapMelissaRecords(records) {
       const phone = extraPhones[index] || "", email = extraEmails[index] || "";
       if (!phone && !email) continue;
       rows.push({ ...blankRow, dataType: "Additional Contact", phone, email });
+    }
+
+    // Safety net: if this person produced no rows at all (no CurrentAddress,
+    // no PreviousAddresses, no extra contacts, or unexpected field shapes),
+    // still emit one row so the person is never silently dropped from the
+    // table. This guarantees the widget shows every person Melissa returned.
+    if (!rows.some((r) => r.melissaRecordLabel === groupLabel)) {
+      rows.push({ ...blankRow, dataType: "Record" });
     }
   });
   return rows;
