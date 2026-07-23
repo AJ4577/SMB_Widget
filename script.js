@@ -1,6 +1,6 @@
 /* Melissa Personator Search — Lead Update Widget */
 
-const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/web/doPersonatorSearch";
+const PERSONATOR_ENDPOINT = "https://personatorsearch.melissadata.net/WEB/doPersonatorSearch";
 const PERSONATOR_PROXY_URL = "";
 const ENABLE_MELISSA_CONTACT_DEBUG = false;
 const PERSONATOR_LICENSE_KEY = "NNyQiGBQttkIhzONLxAqXx**";
@@ -50,10 +50,6 @@ function persistLeadSearchCriteria(leadId, leadRecord) {
       Email: s("Email"), Phone: s("Phone"), Mobile: s("Mobile"),
       Year_of_Birth: s("Year_of_Birth"), Date_of_Birth: s("Date_of_Birth"), DOB: s("DOB"),
       Home_Address_Zip: s("Home_Address_Zip"), Zip_Code: s("Zip_Code"),
-      // IMPORTANT:
-      // Melissa search must use only the standard Lead State field.
-      // Home Address State must never be used as a fallback, so the snapshot
-      // stores ONLY the standard State field here.
       State: String(leadRecord?.State || ""),
     };
     localStorage.setItem(getLeadSnapshotStorageKey(leadId), JSON.stringify(snapshot));
@@ -74,21 +70,12 @@ const els = {
   successModal: $("successModal"), successClose: $("successCloseBtn"),
 };
 
-// One-time startup diagnostic: logs which expected DOM elements are missing.
-// Helps catch HTML/JS id mismatches without breaking the widget.
-(function logMissingElements() {
-  try {
-    const missing = Object.keys(els).filter((k) => !els[k]);
-    if (missing.length) console.warn("[Melissa Widget] Missing DOM elements (check HTML ids):", missing);
-  } catch (e) { /* no-op */ }
-})();
-
-const toggle = (el, cls, show) => { if (el) el.classList.toggle(cls, show); };
-function showBanner(message, type = "info") { if (!els.banner) return; els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
-function hideBanner() { if (!els.banner) return; els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
+const toggle = (el, cls, show) => el.classList.toggle(cls, show);
+function showBanner(message, type = "info") { els.banner.textContent = message; els.banner.className = `banner banner-${type}`; }
+function hideBanner() { els.banner.className = "banner banner-hidden"; els.banner.textContent = ""; }
 function setLoading(isLoading) { toggle(els.loading, "hidden", !isLoading); }
 function showEmpty(show) { toggle(els.empty, "hidden", !show); }
-function setEmptyMessage(message) { if (!els.empty) return; const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
+function setEmptyMessage(message) { const p = els.empty.querySelector("p"); if (p) p.textContent = message; }
 function showResults(show) { toggle(els.resultsWrap, "hidden", !show); }
 function showPreview(show) { toggle(els.previewSec, "hidden", !show); }
 
@@ -142,23 +129,22 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
   if (!currentLeadId) { setLoading(false); showBanner("Current Lead ID not found.", "error"); return; }
 
-  if (els.leadContext) els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
+  els.leadContext.textContent = `Current Lead ID: ${currentLeadId}`;
 
   try {
     currentLeadRecord = await fetchCurrentLead(currentLeadId);
     console.log("Current Lead Data (live CRM):", currentLeadRecord);
 
-    // Remove any old cached search values. Previous versions may have saved
-    // Home Address State inside the State property; clear it so it can never
-    // be reused as Melissa search input.
+    // Clear any old cached search criteria. Previously stored snapshots may
+    // contain a Home Address State value saved under the State property, which
+    // must never be used as Melissa search input. Melissa search always uses
+    // the live CRM Lead record, never previously stored localStorage values.
     try {
       localStorage.removeItem(getLeadSnapshotStorageKey(currentLeadId));
     } catch (error) {
       console.warn("Unable to clear saved Melissa search criteria:", error);
     }
 
-    // Always build Melissa search criteria directly from the live CRM record.
-    // Never load search State from localStorage.
     searchLeadRecord = currentLeadRecord;
 
     const baseParams = buildMelissaSearchParams(searchLeadRecord);
@@ -204,26 +190,14 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     }
 
     const matchedRaw = dedupRawMelissaRecords(allRecords);
-    console.log("Melissa persons received:", allRecords.length, "| after raw-dedup:", matchedRaw.length);
+    console.log("Final rendered records count:", matchedRaw.length);
     setLoading(false);
 
     if (!matchedRaw.length) {
       setEmptyMessage("No Melissa records found for this Name and State."); showEmpty(true); return;
     }
 
-    const mappedRows = mapMelissaRecords(matchedRaw);
-    // Diagnostic: how many rows did each person produce? A person with 0 rows
-    // is invisible in the table even though Melissa returned them.
-    const personRowCounts = {};
-    mappedRows.forEach((r) => { personRowCounts[r.melissaRecordLabel] = (personRowCounts[r.melissaRecordLabel] || 0) + 1; });
-    console.log("Rows produced per person:", personRowCounts);
-    const personsWithRows = Object.keys(personRowCounts).length;
-    if (personsWithRows < matchedRaw.length) {
-      console.warn(`[Melissa Widget] ${matchedRaw.length - personsWithRows} person(s) produced NO rows and are hidden. ` +
-        `Likely their address fields use an unexpected shape/key. Check FULL RECORD logs above.`);
-    }
-
-    const uniqueRows = dedupMelissaRows(mappedRows);
+    const uniqueRows = dedupMelissaRows(mapMelissaRecords(matchedRaw));
 
     if (!uniqueRows.length) {
       setEmptyMessage("No valid address records found to display."); showEmpty(true); return;
@@ -234,7 +208,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
     renderResults(filteredRecords);
     showResults(true);
-    if (els.filterInput) els.filterInput.disabled = false;
+    els.filterInput.disabled = false;
     melissaTableRendered = true;
   } catch (error) {
     console.error("Widget load error:", error);
@@ -311,13 +285,12 @@ function getMelissaUniqueKey(record) {
 
 function dedupRawMelissaRecords(records) {
   if (!Array.isArray(records) || !records.length) return [];
-  // Deluge parity: Melissa already returns one entry per distinct person,
-  // and the Deluge function shows every record without de-duplication.
-  // Collapsing "raw" records here risked dropping a valid person when two
-  // people shared an empty/duplicate identity key. So we pass through every
-  // record unchanged; row-level de-dup (which is keyed by Person #) still
-  // removes exact duplicate rows within a single person safely.
-  return records.slice();
+  const uniqueRecords = new Map();
+  records.forEach((record) => {
+    const key = getMelissaUniqueKey(record);
+    if (!uniqueRecords.has(key)) uniqueRecords.set(key, record);
+  });
+  return Array.from(uniqueRecords.values());
 }
 
 function dedupMelissaRows(rows) {
@@ -353,11 +326,7 @@ async function callMelissaSearchAPI(params) {
     let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) +
       "&format=JSON&opt=SearchConditions:progressive,SearchType:Auto&cols=PreviousAddress,DateOfBirth,Phone,Email";
     if (params.full) url += "&full=" + encodeURIComponent(params.full);
-    // Deluge parity: Deluge always calls param.put("state", state), so the
-    // &state= param is sent even when the lead's State is blank. We mirror
-    // that here (always append, empty value allowed) so the widget and the
-    // Deluge function issue an identical request in the blank-state case too.
-    url += "&state=" + encodeURIComponent(params.state || "");
+    if (params.state) url += "&state=" + encodeURIComponent(params.state);
     console.log("Melissa Search URL (Masked):", url.replace(/([?&]id=)[^&]+/i, "$1***MASKED***"));
     const response = await fetch(url, { method: "GET", signal: controller.signal });
     if (!response.ok) throw new Error(`API error ${response.status}`);
@@ -428,21 +397,12 @@ function mapMelissaRecords(records) {
       if (!phone && !email) continue;
       rows.push({ ...blankRow, dataType: "Additional Contact", phone, email });
     }
-
-    // Safety net: if this person produced no rows at all (no CurrentAddress,
-    // no PreviousAddresses, no extra contacts, or unexpected field shapes),
-    // still emit one row so the person is never silently dropped from the
-    // table. This guarantees the widget shows every person Melissa returned.
-    if (!rows.some((r) => r.melissaRecordLabel === groupLabel)) {
-      rows.push({ ...blankRow, dataType: "Record" });
-    }
   });
   return rows;
 }
 
 /* Table rendering */
 function renderResults(records) {
-  if (!els.resultsBody) return;
   els.resultsBody.innerHTML = "";
   if (!records.length) { showEmpty(true); showResults(false); return; }
   showEmpty(false); showResults(true);
@@ -485,7 +445,6 @@ function selectRecord(index) {
 }
 
 function markSelectedRow(index) {
-  if (!els.resultsBody) return;
   els.resultsBody.querySelectorAll("tr").forEach((row) => {
     const isSelected = parseInt(row.dataset.index, 10) === index;
     row.classList.toggle("selected", isSelected);
@@ -495,7 +454,6 @@ function markSelectedRow(index) {
 }
 
 function renderPreview(record) {
-  if (!els.previewGrid) return;
   const fields = [
     ["Melissa Record", record.melissaRecordLabel], ["First Name", record.firstName], ["Last Name", record.lastName],
     ["Year of Birth", record.birthYear], ["Data Type", record.dataType], ["Home Address Street", record.homeAddressStreet],
@@ -508,18 +466,16 @@ function renderPreview(record) {
 }
 
 /* Filtering */
-if (els.filterInput) {
-  els.filterInput.addEventListener("input", (event) => {
-    const query = String(event.target.value || "").trim().toLowerCase();
-    filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
-      [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
-       record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
-       record.phone, record.email].join(" ").toLowerCase().includes(query)
-    );
-    clearSelection();
-    renderResults(filteredRecords);
-  });
-}
+els.filterInput.addEventListener("input", (event) => {
+  const query = String(event.target.value || "").trim().toLowerCase();
+  filteredRecords = !query ? [...melissaRecords] : melissaRecords.filter((record) =>
+    [record.melissaRecordLabel, record.firstName, record.lastName, record.birthYear, record.dataType,
+     record.homeAddressStreet, record.homeAddressState, record.homeAddressCity, record.homeAddressZip,
+     record.phone, record.email].join(" ").toLowerCase().includes(query)
+  );
+  clearSelection();
+  renderResults(filteredRecords);
+});
 
 /* Zoho CRM update */
 function attachUpdateLeadHandler() {
@@ -603,9 +559,6 @@ function closeWidget() {
   } catch (error) { console.warn("Popup close failed:", error); }
 }
 
-/* Null-safe event binding — a single missing element must not break the others.
-   Each binding is guarded so preview Update/Cancel always attach even if the
-   success modal or top-level cancel button is absent from the HTML. */
 if (els.successClose) els.successClose.addEventListener("click", closeWidget);
 if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", clearSelection);
