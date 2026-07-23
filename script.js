@@ -246,7 +246,11 @@ function buildMelissaSearchParams(lead) {
   // (Deluge: name.replaceAll("[^A-Za-z0-9 -]","")). Ensures the exact same
   // `full` string is sent to Melissa as the Deluge function.
   fullName = fullName.replace(/[^A-Za-z0-9 -]/g, "");
-  const state = String(lead?.State || lead?.LOCATION_ADDRESS_STATE || lead?.Home_Address_State || "").trim();
+  // Deluge parity: the Deluge function reads ONLY the `State` field
+  // (state = ifnull(getData.get("State"),"")). It does NOT fall back to
+  // Home_Address_State. So when State is blank, no state filter is applied
+  // and Melissa searches nationwide — matching the Deluge behaviour exactly.
+  const state = String(lead?.State || "").trim();
   return { full: fullName, state };
 }
 
@@ -333,7 +337,11 @@ async function callMelissaSearchAPI(params) {
     let url = PERSONATOR_ENDPOINT + "?id=" + encodeURIComponent(PERSONATOR_LICENSE_KEY) +
       "&format=JSON&opt=SearchConditions:progressive,SearchType:Auto&cols=PreviousAddress,DateOfBirth,Phone,Email";
     if (params.full) url += "&full=" + encodeURIComponent(params.full);
-    if (params.state) url += "&state=" + encodeURIComponent(params.state);
+    // Deluge parity: Deluge always calls param.put("state", state), so the
+    // &state= param is sent even when the lead's State is blank. We mirror
+    // that here (always append, empty value allowed) so the widget and the
+    // Deluge function issue an identical request in the blank-state case too.
+    url += "&state=" + encodeURIComponent(params.state || "");
     console.log("Melissa Search URL (Masked):", url.replace(/([?&]id=)[^&]+/i, "$1***MASKED***"));
     const response = await fetch(url, { method: "GET", signal: controller.signal });
     if (!response.ok) throw new Error(`API error ${response.status}`);
