@@ -9,6 +9,7 @@ const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
 const FIELD_API_NAMES = {
   street: "LOCATION_ADDRESS",
   State: "State",
+  // state: "LOCATION_ADDRESS_STATE",
   city: "LOCATION_ADDRESS_CITY",
   zip: "Home_Address_Zip",
   phone: "Phone",
@@ -540,7 +541,7 @@ function closeWidget() {
   } catch (error) { console.warn("Popup close failed:", error); }
 }
 
-els.successClose.addEventListener("click", closeWidget);
-els.cancelBtn.addEventListener("click", closeWidget);
+if (els.successClose) els.successClose.addEventListener("click", closeWidget);
+if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", clearSelection);
 if (els.previewUpdateBtn) els.previewUpdateBtn.addEventListener("click", async () => { await updateLeadRecord(); });
