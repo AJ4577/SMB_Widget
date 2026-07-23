@@ -9,7 +9,6 @@ const ADDRESS_UPDATE_MODE = "separate"; // "separate" | "compound"
 const FIELD_API_NAMES = {
   street: "LOCATION_ADDRESS",
   State: "State",
-  // state: "LOCATION_ADDRESS_STATE",
   city: "LOCATION_ADDRESS_CITY",
   zip: "Home_Address_Zip",
   phone: "Phone",
