@@ -540,7 +540,7 @@ function closeWidget() {
   } catch (error) { console.warn("Popup close failed:", error); }
 }
 
-els.successClose.addEventListener("click", closeWidget);
-els.cancelBtn.addEventListener("click", closeWidget);
+if (els.successClose) els.successClose.addEventListener("click", closeWidget);
+if (els.cancelBtn) els.cancelBtn.addEventListener("click", closeWidget);
 if (els.previewCancelBtn) els.previewCancelBtn.addEventListener("click", clearSelection);
 if (els.previewUpdateBtn) els.previewUpdateBtn.addEventListener("click", async () => { await updateLeadRecord(); });
